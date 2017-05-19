@@ -1,0 +1,230 @@
+<!--
+******* Author: Serhii Pahuta
+******* This code is a part of master's thesis: Polymer Elements for a Business Process Management System
+******* 2017 Brno
+-->
+
+<link rel="import" href="../../bower_components/polymer/polymer.html">
+<link rel="import" href="../../bower_components/paper-input/paper-input.html">
+<link rel="import" href="../../bower_components/paper-input/paper-textarea.html">
+<link rel="import" href="../../bower_components/paper-checkbox/paper-checkbox.html">
+<link rel="import" href="../../bower_components/paper-button/paper-button.html">
+<link rel="import" href="../../bower_components/paper-toast/paper-toast.html">
+<link rel="import" href="../../bower_components/paper-styles/paper-styles.html">
+
+<dom-module id="kie-form">
+  <template>
+    <style is="custom-style">
+      :host {
+        display: block;
+        padding: 16px;
+      }
+      #form {
+        margin: 10px;
+      }
+      #divider {
+        margin-top: 10px;
+        margin-bottom: 10px;
+        display:block;
+        background-color: var(--light-primary-color);
+        height: 10px
+      }
+      paper-button.submit {
+        background-color: var(--default-primary-color);
+        --paper-button-raised-keyboard-focus: {
+          background-color: var(--accent-color) !important;
+          color: white !important;
+        };
+      }
+      paper-button.submit:hover {
+        background-color: var(--light-primary-color);
+      }
+    </style>
+
+    <div style="font-size:30px">[[formData.name]]</div>
+
+    <div id="form">
+      <template is="dom-repeat" items="{{fields}}" as="field">
+        <template is="dom-if" if="{{_isTextBox(field)}}">
+          <paper-input auto-validate value="{{field.innerData}}" type="{{_getType(field)}}" label="{{field.label}}" placeholder="{{field.placeHolder}}" required="{{field.required}}" readonly="{{_readOnlyCheck(field)}}"></paper-input>
+        </template>
+        <template is="dom-if" if="{{_isTextArea(field)}}">
+          <paper-textarea auto-validate value="{{field.innerData}}" label="{{field.label}}" placeholder="{{field.placeHolder}}" required="{{field.required}}" readonly="{{_readOnlyCheck(field)}}" rows="{{field.rows}}"></paper-input>
+        </template>
+        <template is="dom-if" if="{{_isCheckBox(field)}}">
+          <paper-checkbox style="margin-top: 5px" checked="{{field.innerData}}" required="{{field.required}}" readonly="{{_readOnlyCheck(field)}}">{{field.label}}</paper-checkbox>
+        </template>
+        
+      </template>
+    </div>
+
+    <template is='dom-if' if='[[!hideButton]]'>
+      <paper-button raised on-click="_submitForm" class="submit">[[buttonName]]</paper-button>
+    </template>
+
+    <iron-ajax
+      verbose
+      id="ajax"
+      url="[[url]]"
+      method="[[method]]"
+      headers="[[headers]]"
+      content-type="application/json"
+      handle-as="json"
+      on-response="_handleResponse">
+    </iron-ajax>
+    <paper-toast id="notification" text="[[notificationMessage]]"></paper-toast>
+  </template>
+
+  <script>
+    class KieForm extends Polymer.Element {
+        static get is() {return 'kie-form';}
+
+        static get properties() {
+            return {
+                url: {
+                    type: String
+                },
+                formData: {
+                    type: Object,
+                    observer: "_readData"
+                },
+                buttonName: {
+                    type: String,
+                    value: "Submit"
+                },
+                hideButton: {
+                  type: Boolean,
+                  value: false
+                },
+                fields: {
+                    type: Array
+                },
+                notificationMessage: {
+                    type: String
+                },
+                method: {
+                    type: String,
+                    value: "POST"
+                },
+                headers: {
+                    type: Object,
+                    value: {}
+                },
+                user: {
+                    type: Object
+                }
+            };
+        }
+
+        ready() {
+          super.ready();
+        }
+
+        resetForm() {
+          var data = this.formData.fields;
+          this.set("fields", data);
+        }
+
+        submitForm() {
+          this._submitForm();
+        }
+
+        //---- Private methods ----//
+
+        _getType(field) {
+          switch (field.standaloneClassName) {
+            case 'java.lang.String':
+              return 'text';
+            case 'java.lang.Integer':
+              return 'number';
+            case 'java.lang.Boolean':
+              return false;
+            case 'java.util.Date':
+              return 'date';
+          }
+        }
+
+        _parseDateString(str) {
+          let dateArr = str.split('-');
+          let date = new Date(dateArr[0],dateArr[1] - 1,dateArr[2]);
+          return date.getTime();
+        }
+
+        _readData() {
+            this.resetForm();
+        }
+
+        _submitForm() {
+            var valid = this._validateForm();
+            if (!valid) {
+                return;
+            }
+            this.$.ajax.body = this._makePayload();
+            this.headers.Accept = "application/json";
+            if (this.user != null) {
+                this.headers.Authorization = "Basic " + btoa(this.user.userId + ":" + this.user.password);
+            }
+            this.headers["X-Requested-With"] = "XMLHttpRequest";
+            this.notificationMessage = "The form '" + this.formData.name + "' is being submited.";
+            this.$.notification.open();
+            this.$.ajax.generateRequest();
+        }
+
+        _isTextBox(field) {
+            return (field.code === 'TextBox' || this._getType(field) === 'date');
+        }
+
+        _isTextArea(field) {
+            return field.code === 'TextArea';
+        }
+
+        _isDatePicker(field) {
+            return field.code === 'DatePicker';
+        }
+
+        _isCheckBox (field) {
+          return field.code == "CheckBox";
+        }
+
+        _readOnlyCheck(field) {
+          if (field.readOnly || (field.inputBinding && !field.outputBinding)) return true
+          else return false;
+        }
+
+        _validateForm() {
+          for (var i = 0; i < this.fields.length; i++) {
+            let field = this.fields[i];
+            if (field.required) {
+              if (!field.innerData) {
+                return false;
+              }
+            }
+          }
+          return true;
+        }
+
+        _makePayload() {
+          let body = {};
+          for (let i=0 ;i<this.fields.length;i++) {
+            if (this.fields[i].outputBinding || (!this.fields[i].outputBinding && !this.fields[i].inputBinding))
+              if (this._getType(this.fields[i]) === 'date' && this.fields[i].innerData)
+                body[this.fields[i].binding] = this._parseDateString(this.fields[i].innerData);
+              else body[this.fields[i].binding] = this.fields[i].innerData;
+          }
+          return body;
+        }
+
+        _handleResponse(response) {
+          this.response = response.detail.response;
+          this.resetForm();
+          this.notificationMessage = "The form '" + this.formData.name + "' has been accepted succesfully.";
+          this.dispatchEvent(new CustomEvent('submitted', {detail: {"formName":this.formData.name}, bubbles: true, composed:true}));
+          this.$.notification.open();
+        }
+
+    }
+
+    customElements.define(KieForm.is,KieForm);
+  </script>
+
+</dom-module>
